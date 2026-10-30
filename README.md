@@ -82,6 +82,7 @@ $ sweepside --in ~/work --json       # scan one folder, as JSON
 ## Also from me
 
 - [Portside](https://github.com/springmusk026/Portside): see every dev server running on your Mac, which project it belongs to, and stop it in one click.
+- [Peekside](https://github.com/springmusk026/Peekside): see which apps used your microphone and camera today, and which ones can read what you type.
 
 ## Contributing
 
