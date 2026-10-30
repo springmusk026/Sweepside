@@ -1,0 +1,60 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build app
+        run: ./build.sh --no-install
+
+      - name: Find and clean build folders, and leave everything else alone
+        run: |
+          sweepside=build/Sweepside.app/Contents/MacOS/Sweepside
+          fx="$RUNNER_TEMP/fx"; mkdir -p "$fx" && cd "$fx"
+          # Real projects
+          mkdir -p web/node_modules/react && echo '{}' > web/package.json && mkfile -n 6m web/node_modules/react/index.js
+          mkdir -p py/.venv && echo 'home = /usr' > py/.venv/pyvenv.cfg && mkfile -n 3m py/.venv/blob
+          mkdir -p rust/target && echo '[package]' > rust/Cargo.toml && mkfile -n 4m rust/target/app
+          # Lookalikes: same names, no project, must never be touched
+          mkdir -p notes/target notes/node_modules && mkfile -n 3m notes/target/thesis.pdf && mkfile -n 3m notes/node_modules/keep
+          # pnpm-style hard link: not counted as freed space
+          mkdir -p store pnpm/node_modules && echo '{}' > pnpm/package.json && mkfile -n 5m store/lib.js && ln store/lib.js pnpm/node_modules/lib.js
+          # Read-only folder (like Go's module cache)
+          mkdir -p php/vendor && echo '{}' > php/composer.json && mkfile -n 2m php/vendor/a && chmod -R a-w php/vendor
+          touch -t 202401010000 web/package.json py/pyvenv.cfg rust/Cargo.toml pnpm/package.json php/composer.json 2>/dev/null || true
+          cd "$GITHUB_WORKSPACE"
+
+          $sweepside --in "$fx"
+          $sweepside --in "$fx" --json > scan.json
+          python3 - "$fx" <<'PY'
+          import json, sys
+          scan = json.load(open("scan.json"))
+          names = sorted(p["name"] for p in scan["projects"])
+          assert names == ["php", "pnpm", "py", "rust", "web"], names
+          pnpm = next(p for p in scan["projects"] if p["name"] == "pnpm")["artifacts"][0]
+          assert pnpm["bytes"] < 1_000_000 and pnpm["shared"] >= 5_000_000, pnpm
+          print("scan ok")
+          PY
+
+          $sweepside clean --in "$fx" --all --permanent --yes
+          test ! -e "$fx/web/node_modules" && test ! -e "$fx/py/.venv" && test ! -e "$fx/rust/target"
+          test ! -e "$fx/php/vendor" && test ! -e "$fx/pnpm/node_modules"
+          test -f "$fx/notes/target/thesis.pdf" && test -f "$fx/notes/node_modules/keep"
+          test -f "$fx/store/lib.js" && test -f "$fx/web/package.json"
+          echo "clean ok: build folders gone, lookalikes and sources kept"
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sweepside.app
+          path: build/Sweepside.app
